@@ -27,14 +27,10 @@ android {
         }
     }
 
-    // The whale sprites are authored images whose alpha channel matters.
-    // AGP's PNG cruncher re-encodes them (281 KB -> 375 KB on disk), which is
-    // the kind of rewrite that previously left the overlay drawing nothing.
-    // They ship as lossless WebP instead, and `cruncherProcesses 0` keeps the
-    // PNG fallbacks untouched on the way in.
-    androidResources {
-        cruncherProcesses = 0
-    }
+    // The whale sprites are authored images whose alpha channel matters, and
+    // AGP's PNG cruncher re-encodes PNGs on the way into the APK. They ship as
+    // lossless WebP instead, which the resource pipeline leaves untouched, so
+    // no cruncher configuration is needed here.
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
