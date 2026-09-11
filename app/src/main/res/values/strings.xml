@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">鲸鱼酱</string>
-    <string name="panel_subtitle">一只浮在桌面上的小鲸鱼</string>
+    <string name="panel_subtitle">一只浮在桌面上的鲸鱼女仆</string>
 
     <string name="status_ready">已获得悬浮窗权限，可以召唤鲸鱼酱了</string>
     <string name="status_need_permission">还没有悬浮窗权限，需要先授权</string>
 
     <string name="action_spawn">召唤鲸鱼酱</string>
-    <string name="action_stop">让她回去睡觉</string>
+    <string name="action_stop">让她回去休息</string>
 
-    <string name="panel_hint">召唤后她会浮在桌面上：\n\n• 拖动她可以换位置\n• 点一下她会冒泡说话\n• 点开后可以选「说话」「跳跃」或「退出」\n• 重启手机后会自动回来</string>
+    <string name="panel_hint">召唤后她会浮在桌面上：\n\n• 拖动她可以换位置\n• 点一下她会转身、跳一下并冒泡说话\n• 多点几次可以看她的正面 / 侧面 / 背面\n• 重启手机后会自动回来</string>
 
     <string name="toast_grant">请打开「显示在其他应用上层」权限</string>
     <string name="toast_spawned">鲸鱼酱来了～</string>
-    <string name="toast_stopped">鲸鱼酱回去睡觉了</string>
+    <string name="toast_stopped">鲸鱼酱回去休息了</string>
 
     <string name="channel_name">鲸鱼酱</string>
     <string name="channel_desc">保持鲸鱼酱浮在桌面上</string>
@@ -22,21 +22,23 @@
 
     <string name="menu_say_hi">说点什么</string>
     <string name="menu_jump">跳一下</string>
+    <string name="menu_turn">转个身</string>
     <string name="menu_stop">退出</string>
 
-    <string name="line_hello">呀，你好呀～</string>
-    <string name="line_long_press">别按那么久啦，痒</string>
+    <string name="line_hello">呀，主人你好～</string>
 
     <string-array name="whale_lines">
-        <item>呀，你好呀～</item>
+        <item>呀，主人你好～</item>
         <item>今天也要加油哦</item>
         <item>咕噜咕噜…</item>
-        <item>你在忙什么呀？</item>
-        <item>摸摸头，舒服</item>
+        <item>主人，喝点水吧</item>
+        <item>家务我都做好啦</item>
         <item>要不要一起摸鱼？</item>
         <item>我一直在你旁边呢</item>
-        <item>嘘——我在睡觉</item>
+        <item>嘘——我在打瞌睡</item>
         <item>你手机好烫哦</item>
         <item>嘿嘿，被你发现啦</item>
+        <item>裙子转起来好看吗？</item>
+        <item>尾巴…不要拽啦</item>
     </string-array>
 </resources>

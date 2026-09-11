@@ -16,10 +16,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import kotlin.math.abs
 import kotlin.math.hypot
 
 /**
@@ -43,6 +41,7 @@ class PetService : Service() {
     private var running = false
     private var bubbleVisible = false
     private var menuVisible = false
+    private var lastLineIndex = -1
 
     /** Frame loop: drives the whale's animation. */
     private val frameTick = object : Runnable {
@@ -108,7 +107,7 @@ class PetService : Service() {
     private fun createPetWindow() {
         petView = WhaleView(this)
         petParams = WindowManager.LayoutParams(
-            PET_SIZE, PET_SIZE,
+            WhaleView.SIZE, WhaleView.SIZE,
             overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -151,6 +150,7 @@ class PetService : Service() {
             alpha = 0f
             addView(menuItem(R.string.menu_say_hi) { showBubble(pickLine()); hideMenu() })
             addView(menuItem(R.string.menu_jump) { petView.jump(); hideMenu() })
+            addView(menuItem(R.string.menu_turn) { petView.poke(); hideMenu() })
             addView(menuItem(R.string.menu_stop) { stopSelf() })
         }
         menuParams = WindowManager.LayoutParams(
@@ -220,21 +220,24 @@ class PetService : Service() {
             hideMenu()
             return
         }
-        petView.blink()
+        petView.poke()
         petView.jump()
         showBubble(pickLine())
         showMenu()
-    }
-
-    private fun onPetLongPressed() {
-        showBubble(getString(R.string.line_long_press))
     }
 
     /** Random chatter, so repeated taps do not read as a stuck recording. */
     private fun pickLine(): String {
         val lines = resources.getStringArray(R.array.whale_lines)
         if (lines.isEmpty()) return getString(R.string.line_hello)
-        return lines[abs(System.currentTimeMillis() / 1000L % lines.size).toInt()]
+        // Avoid repeating the same line twice in a row: it reads as a glitch.
+        val index = (Math.random() * lines.size).toInt().coerceIn(0, lines.size - 1)
+        return if (lines.size > 1 && index == lastLineIndex) {
+            lines[(index + 1) % lines.size]
+        } else {
+            lastLineIndex = index
+            lines[index]
+        }
     }
 
     private fun showBubble(text: String) {
@@ -259,7 +262,7 @@ class PetService : Service() {
 
     private fun showMenu() {
         menuParams.x = (petParams.x - 20).coerceAtLeast(8)
-        menuParams.y = petParams.y + PET_SIZE - 12
+        menuParams.y = petParams.y + WhaleView.SIZE - 12
         if (!menuVisible) {
             menuVisible = true
             runCatching { windowManager.addView(menuView, menuParams) }
@@ -339,7 +342,6 @@ class PetService : Service() {
 
         private const val CHANNEL_ID = "whale_chan_pet"
         private const val NOTIFICATION_ID = 42
-        private const val PET_SIZE = 260
         private const val FRAME_MS = 40L
         private const val TAP_SLOP = 18f
         private const val BUBBLE_MS = 2600L
