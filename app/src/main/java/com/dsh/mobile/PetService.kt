@@ -7,11 +7,13 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -23,22 +25,26 @@ import kotlin.math.hypot
 /**
  * Hosts Whale-chan as a system overlay and keeps her alive.
  *
- * The service owns three windows: the whale itself, a speech bubble that
- * fades in on tap, and a small action menu for quick commands.
+ * Overlay attachment is the fragile part of this service: `addView` throws
+ * when the user has not granted the draw-over-other-apps permission, and an
+ * uncaught throw inside a service tears down the whole process. Every step
+ * that touches the window manager is therefore guarded, and a failure ends
+ * the service cleanly instead of crashing the app.
  */
 class PetService : Service() {
 
-    private lateinit var windowManager: WindowManager
-    private lateinit var petView: WhaleView
-    private lateinit var bubbleView: TextView
-    private lateinit var menuView: LinearLayout
+    private var windowManager: WindowManager? = null
+    private var petView: WhaleView? = null
+    private var bubbleView: TextView? = null
+    private var menuView: LinearLayout? = null
 
-    private lateinit var petParams: WindowManager.LayoutParams
-    private lateinit var bubbleParams: WindowManager.LayoutParams
-    private lateinit var menuParams: WindowManager.LayoutParams
+    private var petParams: WindowManager.LayoutParams? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var menuParams: WindowManager.LayoutParams? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
+    private var overlayAttached = false
     private var bubbleVisible = false
     private var menuVisible = false
     private var lastLineIndex = -1
@@ -47,16 +53,17 @@ class PetService : Service() {
     private val frameTick = object : Runnable {
         override fun run() {
             if (!running) return
-            petView.tick()
+            petView?.tick()
             handler.postDelayed(this, FRAME_MS)
         }
     }
 
     /** Fades the speech bubble back out. */
     private val hideBubble = Runnable {
+        val view = bubbleView ?: return@Runnable
         if (bubbleVisible) {
-            bubbleView.animate().alpha(0f).setDuration(260).withEndAction {
-                runCatching { windowManager.removeView(bubbleView) }
+            view.animate().alpha(0f).setDuration(260).withEndAction {
+                removeViewSafely(view)
                 bubbleVisible = false
             }.start()
         }
@@ -66,14 +73,35 @@ class PetService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        startForeground(NOTIFICATION_ID, buildNotification())
 
-        createPetWindow()
+        // Must happen before anything can throw, or Android kills the service.
+        if (!enterForeground()) {
+            stopSelf()
+            return
+        }
+
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        if (windowManager == null) {
+            stopSelf()
+            return
+        }
+
+        // Without the overlay permission every addView call throws; bail out.
+        if (!canDrawOverlays()) {
+            stopSelf()
+            return
+        }
+
+        if (!createPetWindow()) {
+            stopSelf()
+            return
+        }
+
         createBubbleWindow()
         createMenuWindow()
 
         running = true
+        PetState.running = true
         handler.post(frameTick)
     }
 
@@ -82,17 +110,59 @@ class PetService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // A restart with the overlay already gone means the permission was
+        // revoked while we were alive; drop out rather than looping.
+        if (!overlayAttached && !canDrawOverlays()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 
     override fun onDestroy() {
         running = false
+        PetState.running = false
         handler.removeCallbacksAndMessages(null)
-        for (v in listOf(petView, bubbleView, menuView)) {
-            runCatching { windowManager.removeView(v) }
-        }
+        bubbleVisible = false
+        menuVisible = false
+        removeViewSafely(bubbleView)
+        removeViewSafely(menuView)
+        removeViewSafely(petView)
+        overlayAttached = false
+        petView = null
+        bubbleView = null
+        menuView = null
         super.onDestroy()
     }
+
+    // ------------------------------------------------------------ lifecycle
+
+    /** Promote to a foreground service; returns false when the OS refuses. */
+    private fun enterForeground(): Boolean = try {
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, foregroundServiceType())
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        true
+    } catch (t: Throwable) {
+        false
+    }
+
+    private fun foregroundServiceType(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        } else {
+            0
+        }
+
+    private fun canDrawOverlays(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
 
     // ---------------------------------------------------------------- windows
 
@@ -104,9 +174,11 @@ class PetService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-    private fun createPetWindow() {
-        petView = WhaleView(this)
-        petParams = WindowManager.LayoutParams(
+    /** Attaches the whale. Returns false when the OS rejects the window. */
+    private fun createPetWindow(): Boolean {
+        val wm = windowManager ?: return false
+        val view = WhaleView(this)
+        val params = WindowManager.LayoutParams(
             WhaleView.SIZE, WhaleView.SIZE,
             overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -118,8 +190,17 @@ class PetService : Service() {
             y = 400
         }
 
-        petView.setOnTouchListener(DragTapListener())
-        windowManager.addView(petView, petParams)
+        view.setOnTouchListener(DragTapListener())
+        return try {
+            wm.addView(view, params)
+            petView = view
+            petParams = params
+            overlayAttached = true
+            true
+        } catch (t: Throwable) {
+            // BadTokenException when the permission was revoked mid-flight.
+            false
+        }
     }
 
     private fun createBubbleWindow() {
@@ -149,8 +230,8 @@ class PetService : Service() {
             setPadding(20, 14, 20, 14)
             alpha = 0f
             addView(menuItem(R.string.menu_say_hi) { showBubble(pickLine()); hideMenu() })
-            addView(menuItem(R.string.menu_jump) { petView.jump(); hideMenu() })
-            addView(menuItem(R.string.menu_turn) { petView.poke(); hideMenu() })
+            addView(menuItem(R.string.menu_jump) { petView?.jump(); hideMenu() })
+            addView(menuItem(R.string.menu_turn) { petView?.poke(); hideMenu() })
             addView(menuItem(R.string.menu_stop) { stopSelf() })
         }
         menuParams = WindowManager.LayoutParams(
@@ -174,6 +255,12 @@ class PetService : Service() {
             setOnClickListener { onClick() }
         }
 
+    private fun removeViewSafely(view: View?) {
+        val wm = windowManager ?: return
+        if (view == null) return
+        runCatching { wm.removeView(view) }
+    }
+
     // ------------------------------------------------------------- behaviour
 
     /** Distinguishes a tap from a drag, and moves the pet with the finger. */
@@ -185,10 +272,11 @@ class PetService : Service() {
         private var dragged = false
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
+            val params = petParams ?: return false
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    startX = petParams.x
-                    startY = petParams.y
+                    startX = params.x
+                    startY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
                     dragged = false
@@ -199,10 +287,16 @@ class PetService : Service() {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
                     if (hypot(dx, dy) > TAP_SLOP) dragged = true
-                    petParams.x = startX + dx.toInt()
-                    petParams.y = startY + dy.toInt()
-                    runCatching { windowManager.updateViewLayout(petView, petParams) }
-                    if (dragged) hideMenu()
+                    params.x = startX + dx.toInt()
+                    params.y = startY + dy.toInt()
+                    if (dragged) {
+                        val view = petView
+                        val wm = windowManager
+                        if (view != null && wm != null) {
+                            runCatching { wm.updateViewLayout(view, params) }
+                        }
+                        hideMenu()
+                    }
                     return true
                 }
 
@@ -220,8 +314,8 @@ class PetService : Service() {
             hideMenu()
             return
         }
-        petView.poke()
-        petView.jump()
+        petView?.poke()
+        petView?.jump()
         showBubble(pickLine())
         showMenu()
     }
@@ -241,39 +335,63 @@ class PetService : Service() {
     }
 
     private fun showBubble(text: String) {
-        bubbleView.text = text
+        val view = bubbleView ?: return
+        val wm = windowManager ?: return
+        val params = bubbleParams ?: return
+
+        view.text = text
         positionBubble()
         if (!bubbleVisible) {
-            bubbleVisible = true
-            runCatching { windowManager.addView(bubbleView, bubbleParams) }
+            bubbleVisible = try {
+                wm.addView(view, params)
+                true
+            } catch (t: Throwable) {
+                false
+            }
         }
-        bubbleView.animate().alpha(1f).setDuration(180).start()
+        view.animate().alpha(1f).setDuration(180).start()
         handler.removeCallbacks(hideBubble)
         handler.postDelayed(hideBubble, BUBBLE_MS)
     }
 
     private fun positionBubble() {
-        bubbleParams.x = (petParams.x - 40).coerceAtLeast(8)
-        bubbleParams.y = (petParams.y - 130).coerceAtLeast(8)
+        val pet = petParams ?: return
+        val params = bubbleParams ?: return
+        params.x = (pet.x - 40).coerceAtLeast(8)
+        params.y = (pet.y - 130).coerceAtLeast(8)
         if (bubbleVisible) {
-            runCatching { windowManager.updateViewLayout(bubbleView, bubbleParams) }
+            val view = bubbleView
+            val wm = windowManager
+            if (view != null && wm != null) {
+                runCatching { wm.updateViewLayout(view, params) }
+            }
         }
     }
 
     private fun showMenu() {
-        menuParams.x = (petParams.x - 20).coerceAtLeast(8)
-        menuParams.y = petParams.y + WhaleView.SIZE - 12
+        val view = menuView ?: return
+        val wm = windowManager ?: return
+        val params = menuParams ?: return
+        val pet = petParams ?: return
+
+        params.x = (pet.x - 20).coerceAtLeast(8)
+        params.y = pet.y + WhaleView.SIZE - 12
         if (!menuVisible) {
-            menuVisible = true
-            runCatching { windowManager.addView(menuView, menuParams) }
+            menuVisible = try {
+                wm.addView(view, params)
+                true
+            } catch (t: Throwable) {
+                false
+            }
         }
-        menuView.animate().alpha(1f).setDuration(150).start()
+        view.animate().alpha(1f).setDuration(150).start()
     }
 
     private fun hideMenu() {
         if (!menuVisible) return
-        menuView.animate().alpha(0f).setDuration(140).withEndAction {
-            runCatching { windowManager.removeView(menuView) }
+        val view = menuView ?: return
+        view.animate().alpha(0f).setDuration(140).withEndAction {
+            removeViewSafely(view)
             menuVisible = false
         }.start()
     }
@@ -283,7 +401,7 @@ class PetService : Service() {
         val start = System.currentTimeMillis()
         val runner = object : Runnable {
             override fun run() {
-                val t = (System.currentTimeMillis() - start) / (JUMP_MS * 1f)
+                val t = (System.currentTimeMillis() - start) / JUMP_MS
                 if (t >= 1f) {
                     jumpProgress = 0f
                     return
@@ -298,14 +416,15 @@ class PetService : Service() {
     // ---------------------------------------------------------- notification
 
     private fun buildNotification(): Notification {
+        val channelId = CHANNEL_ID
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
+                channelId,
                 getString(R.string.channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply { description = getString(R.string.channel_desc) }
             val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
+            nm?.createNotificationChannel(channel)
         }
 
         val stopIntent = PendingIntent.getService(
@@ -316,7 +435,7 @@ class PetService : Service() {
         )
 
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
+            Notification.Builder(this, channelId)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)

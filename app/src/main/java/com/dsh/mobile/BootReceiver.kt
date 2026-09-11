@@ -23,10 +23,14 @@ class BootReceiver : BroadcastReceiver() {
         if (!allowed) return
 
         val service = Intent(context, PetService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(service)
-        } else {
-            context.startService(service)
+        // A boot-time start can still be refused (background start limits);
+        // swallow it rather than crash the receiver and annoy the user.
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(service)
+            } else {
+                context.startService(service)
+            }
         }
     }
 }

@@ -12,6 +12,10 @@ import com.dsh.mobile.databinding.ActivityMainBinding
 /**
  * Control panel for the pet: request the overlay permission, then start or
  * stop the floating whale.
+ *
+ * The spawn button stays clickable even without the permission — tapping it
+ * sends the user to the system grant screen. Disabling it instead makes the
+ * button look broken, because a disabled tap produces no visible feedback.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -23,10 +27,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.buttonSpawn.setOnClickListener {
-            if (canDrawOverlays()) {
-                startPet()
-            } else {
-                requestOverlayPermission()
+            when {
+                !canDrawOverlays() -> requestOverlayPermission()
+                isPetRunning -> {
+                    Toast.makeText(this, R.string.toast_already_running, Toast.LENGTH_SHORT).show()
+                }
+                else -> startPet()
             }
         }
 
@@ -42,12 +48,22 @@ class MainActivity : AppCompatActivity() {
         refreshState()
     }
 
+    /** Whether the pet service is alive right now. */
+    private val isPetRunning: Boolean
+        get() = PetState.running
+
     private fun refreshState() {
         val allowed = canDrawOverlays()
         binding.statusText.text = getString(
-            if (allowed) R.string.status_ready else R.string.status_need_permission
+            when {
+                !allowed -> R.string.status_need_permission
+                isPetRunning -> R.string.status_running
+                else -> R.string.status_ready
+            }
         )
-        binding.buttonSpawn.isEnabled = allowed
+        binding.buttonSpawn.text = getString(
+            if (allowed) R.string.action_spawn else R.string.action_grant
+        )
     }
 
     private fun canDrawOverlays(): Boolean =
@@ -60,21 +76,28 @@ class MainActivity : AppCompatActivity() {
     private fun requestOverlayPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Toast.makeText(this, R.string.toast_grant, Toast.LENGTH_LONG).show()
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
             )
+            // Some OEM builds ship no such settings screen; keep the app usable.
+            runCatching { startActivity(intent) }.onFailure {
+                Toast.makeText(this, R.string.toast_no_settings, Toast.LENGTH_LONG).show()
+            }
         }
     }
 
     private fun startPet() {
         val intent = Intent(this, PetService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        }.onFailure {
+            Toast.makeText(this, R.string.toast_start_failed, Toast.LENGTH_LONG).show()
+            return
         }
         Toast.makeText(this, R.string.toast_spawned, Toast.LENGTH_SHORT).show()
         // The pet lives on the home screen; get out of her way.
