@@ -403,23 +403,6 @@ class PetService : Service() {
         }.start()
     }
 
-    private fun WhaleView.jump() {
-        jumpProgress = 0f
-        val start = System.currentTimeMillis()
-        val runner = object : Runnable {
-            override fun run() {
-                val t = (System.currentTimeMillis() - start) / JUMP_MS
-                if (t >= 1f) {
-                    jumpProgress = 0f
-                    return
-                }
-                jumpProgress = t
-                handler.postDelayed(this, FRAME_MS)
-            }
-        }
-        handler.post(runner)
-    }
-
     // ---------------------------------------------------------- notification
 
     private fun buildNotification(): Notification {
@@ -471,6 +454,5 @@ class PetService : Service() {
         private const val FRAME_MS = 40L
         private const val TAP_SLOP = 18f
         private const val BUBBLE_MS = 2600L
-        private const val JUMP_MS = 520f
     }
 }
