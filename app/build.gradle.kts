@@ -11,8 +11,8 @@ android {
         applicationId = "com.dsh.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "3.3"
+        versionCode = 6
+        versionName = "4.0"
     }
 
     buildTypes {
@@ -25,6 +25,14 @@ android {
             // Unsigned release for CI; debug signing keeps the artifact installable.
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    // The whale sprites are authored images whose alpha channel matters.
+    // AGP's PNG cruncher re-encodes them (281 KB -> 375 KB on disk), which is
+    // the kind of rewrite that previously left the overlay drawing nothing.
+    // Keep the bytes exactly as authored.
+    androidResources {
+        cruncherEnabled = false
     }
 
     compileOptions {

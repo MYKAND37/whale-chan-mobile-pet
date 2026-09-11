@@ -34,13 +34,21 @@ class WhaleView(context: Context) : View(context) {
     }
     private val frame = RectF()
 
+    /**
+     * Candidate asset paths per view, most-preferred first.
+     *
+     * Lossless WebP is tried first because AGP's resource pipeline leaves it
+     * alone; the PNG copy is a fallback in case a device cannot decode WebP.
+     */
     private val spriteNames = listOf(
-        "whale/whale_front.png",
-        "whale/whale_side.png",
-        "whale/whale_back.png"
+        listOf("whale/whale_front.webp", "whale/whale_front.png"),
+        listOf("whale/whale_side.webp", "whale/whale_side.png"),
+        listOf("whale/whale_back.webp", "whale/whale_back.png")
     )
 
-    private val views: List<Bitmap?> = spriteNames.map { decodeAsset(context, it) }
+    private val views: List<Bitmap?> = spriteNames.map { candidates ->
+        candidates.firstNotNullOfOrNull { decodeAsset(context, it) }
+    }
 
     /** Diagnostic string rendered when nothing could be decoded. */
     private val failure: String? =
