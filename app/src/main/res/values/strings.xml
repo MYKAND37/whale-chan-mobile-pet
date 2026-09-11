@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DSH Mobile</string>
+    <string name="dialog_title">DSH 地址</string>
+    <string name="dialog_go">连接</string>
+    <string name="dialog_cancel">取消</string>
+    <string name="err_empty_url">地址不能为空</string>
+    <string name="fab_desc">设置地址</string>
+</resources>
