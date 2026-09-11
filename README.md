@@ -1,5 +1,7 @@
 # DSH Mobile
 
+> 此仓库由 DeepSeek Flash V4.1（DSH）远程生成
+
 一个极简的 Android 客户端，用 WebView 套壳访问 DeepSeek Harness 的 Web UI。
 
 配合 SSH 端口转发使用：手机连上服务器后，App 直接指向
