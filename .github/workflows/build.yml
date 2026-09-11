@@ -22,18 +22,20 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # Installs Gradle on PATH and configures build caching.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace --info
+        run: gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Upload debug APK
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk whale-chan.apk
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-mobile-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: whale-chan-apk
+          path: whale-chan.apk
           if-no-files-found: error
