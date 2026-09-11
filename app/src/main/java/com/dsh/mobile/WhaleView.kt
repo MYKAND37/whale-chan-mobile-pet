@@ -4,33 +4,47 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.Log
 import android.view.View
+import java.io.InputStream
 import kotlin.math.sin
 
 /**
  * Whale-chan as an overlay sprite.
  *
- * The artwork is a three-view character sheet (front / side / back) that was
- * cut apart and alpha-keyed at build time.
+ * Artwork is loaded from `assets/whale/` rather than `res/drawable`. Files
+ * under `res/` pass through AAPT2, which may re-encode a PNG and can disturb
+ * its alpha channel; assets are packaged byte-for-byte, so the decoded bitmap
+ * is exactly the artwork that was authored.
  *
- * Decoding deliberately goes through [BitmapFactory.Options] with density
- * scaling disabled: these PNGs live in `drawable-nodpi`, and letting the
- * framework rescale them produced bitmaps whose measured size did not match
- * the artwork, which is what made the sprite vanish at draw time.
+ * When no sprite can be decoded the view paints a visible placeholder instead
+ * of drawing nothing — a silent blank overlay is impossible to diagnose from a
+ * screenshot, which is exactly how the earlier "the whale never appears"
+ * report went unexplained.
  */
 class WhaleView(context: Context) : View(context) {
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val debugPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#D32F2F")
+        textSize = 22f
+    }
     private val frame = RectF()
 
-    private val views: List<Bitmap?> = listOf(
-        R.drawable.whale_front,
-        R.drawable.whale_side,
-        R.drawable.whale_back
-    ).map { decode(context, it) }
+    private val spriteNames = listOf(
+        "whale/whale_front.png",
+        "whale/whale_side.png",
+        "whale/whale_back.png"
+    )
+
+    private val views: List<Bitmap?> = spriteNames.map { decodeAsset(context, it) }
+
+    /** Diagnostic string rendered when nothing could be decoded. */
+    private val failure: String? =
+        if (views.all { it == null }) "解码失败\n${spriteNames.size} 张图都没读到" else null
 
     private var tick = 0f
 
@@ -48,7 +62,7 @@ class WhaleView(context: Context) : View(context) {
             invalidate()
         }
 
-    /** True when at least one sprite decoded; the activity surfaces this. */
+    /** True when at least one sprite decoded. */
     val hasArtwork: Boolean get() = views.any { it != null && !it.isRecycled }
 
     fun tick() {
@@ -66,7 +80,13 @@ class WhaleView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val bitmap = views.getOrNull(facing) ?: views.firstOrNull { it != null } ?: return
+        val bitmap = views.getOrNull(facing)
+            ?: views.firstOrNull { it != null }
+            ?: run {
+                // Nothing decoded: say so on screen rather than staying blank.
+                failure?.let { canvas.drawText(it, 12f, 40f, debugPaint) }
+                return
+            }
         if (bitmap.isRecycled) return
 
         val w = width.toFloat()
@@ -110,23 +130,25 @@ class WhaleView(context: Context) : View(context) {
         const val SIZE_DP = 180
 
         /**
-         * Decode without density scaling and without a colour-space surprise.
-         * Returns null instead of throwing, so one bad asset cannot take the
-         * whole overlay down.
+         * Decode one asset, never throwing. Returns null when the asset is
+         * missing or unreadable so a single bad file cannot blank the overlay.
          */
-        private fun decode(context: Context, resId: Int): Bitmap? = try {
-            val options = BitmapFactory.Options().apply {
-                inScaled = false
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            BitmapFactory.decodeResource(context.resources, resId, options)?.also { bmp ->
-                Log.d(TAG, "decoded $resId -> ${bmp.width}x${bmp.height}")
-            } ?: run {
-                Log.w(TAG, "decodeResource returned null for $resId")
-                null
+        private fun decodeAsset(context: Context, name: String): Bitmap? = try {
+            val stream: InputStream = context.assets.open(name)
+            stream.use { input ->
+                val options = BitmapFactory.Options().apply {
+                    inScaled = false
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeStream(input, null, options)?.also { bmp ->
+                    Log.d(TAG, "decoded $name -> ${bmp.width}x${bmp.height}")
+                } ?: run {
+                    Log.w(TAG, "decodeStream returned null for $name")
+                    null
+                }
             }
         } catch (t: Throwable) {
-            Log.e(TAG, "failed to decode $resId", t)
+            Log.e(TAG, "failed to decode $name", t)
             null
         }
     }
