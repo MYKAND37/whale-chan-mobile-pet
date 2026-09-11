@@ -11,8 +11,8 @@ android {
         applicationId = "com.dsh.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
     }
 
     buildTypes {
@@ -22,7 +22,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Unsigned release for CI; debug signing used for installable artifact
+            // Unsigned release for CI; debug signing keeps the artifact installable.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
