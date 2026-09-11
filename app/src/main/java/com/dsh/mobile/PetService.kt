@@ -178,16 +178,22 @@ class PetService : Service() {
     private fun createPetWindow(): Boolean {
         val wm = windowManager ?: return false
         val view = WhaleView(this)
+
+        // The window is sized in density-independent pixels; using raw pixels
+        // made the overlay a tiny postage stamp on high-density screens.
+        val density = resources.displayMetrics.density
+        val sizePx = (WhaleView.SIZE_DP * density).toInt().coerceAtLeast(1)
+
         val params = WindowManager.LayoutParams(
-            WhaleView.SIZE, WhaleView.SIZE,
+            sizePx, sizePx,
             overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 60
-            y = 400
+            x = (60 * density).toInt()
+            y = (300 * density).toInt()
         }
 
         view.setOnTouchListener(DragTapListener())
@@ -375,7 +381,8 @@ class PetService : Service() {
         val pet = petParams ?: return
 
         params.x = (pet.x - 20).coerceAtLeast(8)
-        params.y = pet.y + WhaleView.SIZE - 12
+        val density = resources.displayMetrics.density
+        params.y = pet.y + (WhaleView.SIZE_DP * density).toInt() - 12
         if (!menuVisible) {
             menuVisible = try {
                 wm.addView(view, params)
