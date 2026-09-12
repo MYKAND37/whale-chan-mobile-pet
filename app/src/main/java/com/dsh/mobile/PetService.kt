@@ -179,32 +179,48 @@ class PetService : Service() {
         val wm = windowManager ?: return false
         val view = WhaleView(this)
 
-        // The window is sized in density-independent pixels; using raw pixels
-        // made the overlay a tiny postage stamp on high-density screens.
-        val density = resources.displayMetrics.density
+        val metrics = resources.displayMetrics
+        val density = metrics.density
         val sizePx = (WhaleView.SIZE_DP * density).toInt().coerceAtLeast(1)
 
+        // Clamp the start position inside the screen. A window placed past the
+        // bottom edge is legal but invisible, which reads as "the pet is gone".
+        val maxX = (metrics.widthPixels - sizePx).coerceAtLeast(0)
+        val maxY = (metrics.heightPixels - sizePx).coerceAtLeast(0)
+        val startX = (72 * density).toInt().coerceIn(0, maxX)
+        val startY = (160 * density).toInt().coerceIn(0, maxY)
+
+        // Flags match the speech bubble's window, which has always rendered.
+        // FLAG_LAYOUT_NO_LIMITS is deliberately absent.
         val params = WindowManager.LayoutParams(
             sizePx, sizePx,
             overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (60 * density).toInt()
-            y = (300 * density).toInt()
+            x = startX
+            y = startY
         }
 
         view.setOnTouchListener(DragTapListener())
+
         return try {
             wm.addView(view, params)
             petView = view
             petParams = params
             overlayAttached = true
+            PetState.diagnostic = buildString {
+                append("窗口 ").append(sizePx).append("px @ (").append(startX).append(", ")
+                append(startY).append(")")
+                append("\n屏幕 ").append(metrics.widthPixels).append("x")
+                append(metrics.heightPixels).append(" @").append(density).append("x")
+                append("\n").append(view.report)
+            }
             true
         } catch (t: Throwable) {
-            // BadTokenException when the permission was revoked mid-flight.
+            // BadTokenException when the overlay permission was revoked.
+            PetState.diagnostic = "悬浮窗创建失败：${t.javaClass.simpleName}"
             false
         }
     }

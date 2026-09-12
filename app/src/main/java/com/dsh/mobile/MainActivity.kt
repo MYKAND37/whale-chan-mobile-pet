@@ -54,13 +54,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshState() {
         val allowed = canDrawOverlays()
-        binding.statusText.text = getString(
+        val headline = getString(
             when {
                 !allowed -> R.string.status_need_permission
                 isPetRunning -> R.string.status_running
                 else -> R.string.status_ready
             }
         )
+        // Append the service's own report so a blank overlay can be explained
+        // without needing logcat on the device.
+        val detail = PetState.diagnostic
+        binding.statusText.text =
+            if (detail.isNullOrBlank()) headline else "$headline\n\n$detail"
+
         binding.buttonSpawn.text = getString(
             if (allowed) R.string.action_spawn else R.string.action_grant
         )
