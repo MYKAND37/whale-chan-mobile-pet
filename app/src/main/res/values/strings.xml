@@ -11,7 +11,7 @@
     <string name="action_grant">去授权悬浮窗权限</string>
     <string name="action_stop">让她回去休息</string>
 
-    <string name="panel_hint">召唤后她会浮在桌面上：\n\n• 拖动她可以换位置\n• 点一下她会转身、跳一下并冒泡说话\n• 多点几次可以看她的正面 / 侧面 / 背面\n• 重启手机后会自动回来</string>
+    <string name="panel_hint">召唤后她会浮在桌面上：\n\n• 拖动她可以换位置\n• 点一下她会摸头撒娇，并冒泡说话\n• 点开后可以选「说点什么」「跳一下」「转个身」或「退出」\n• 重启手机后会自动回来</string>
 
     <string name="toast_grant">请打开「显示在其他应用上层」权限</string>
     <string name="toast_no_settings">这台设备没有找到悬浮窗权限设置页，请到系统设置里手动开启</string>

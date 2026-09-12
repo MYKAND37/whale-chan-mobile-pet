@@ -3,6 +3,8 @@ package com.dsh.mobile
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.animation.Animation
 import android.view.animation.LinearInterpolator
@@ -14,11 +16,12 @@ import kotlin.math.sin
 /**
  * Whale-chan as an overlay sprite.
  *
- * This is an [ImageView] rather than a custom-drawn view or a FrameLayout
- * wrapper, so the overlay's root is the same kind of framework widget as the
- * speech bubble that has always rendered correctly. It also means the window
- * needs no special flags: the pet window and the bubble window are now
- * configured identically apart from size and position.
+ * This is an [ImageView] rather than a custom-drawn view, so the overlay's
+ * root is the same kind of framework widget as the speech bubble that has
+ * always rendered correctly, and the window needs no special flags.
+ *
+ * Poking her plays a head-pat animation: five frames extracted from the GIF
+ * in issue #4, cycled a few times and then released back to the resting view.
  *
  * [report] carries the decode outcome so the control panel can show it. A
  * blank overlay with no explanation is impossible to diagnose from a
@@ -38,21 +41,61 @@ class WhaleView(context: Context) : ImageView(context) {
         listOf("whale/whale_back.webp", "whale/whale_back.png")
     )
 
+    /** Head-pat animation frames, in playback order. */
+    private val patPaths: List<List<String>> = (0 until PAT_FRAME_COUNT).map { index ->
+        listOf("whale_pat/pat_$index.webp", "whale_pat/pat_$index.png")
+    }
+
     private val sprites: List<Bitmap?> = spritePaths.map { candidates ->
         candidates.firstNotNullOfOrNull { decodeAsset(context, it) }
     }
 
+    private val patFrames: List<Bitmap> = patPaths.mapNotNull { candidates ->
+        candidates.firstNotNullOfOrNull { decodeAsset(context, it) }
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
+
     private var facing = 0
     private var tickCount = 0f
+    private var patFrame = 0
+    private var patLoops = 0
+    private var restingBitmap: Bitmap? = null
 
     /** True when at least one sprite decoded. */
     val hasArtwork: Boolean = sprites.any { it != null }
 
     /** Decode outcome, shown verbatim in the control panel. */
-    val report: String = sprites.mapIndexed { index, bmp ->
-        val label = VIEW_LABELS.getOrElse(index) { "视图$index" }
-        if (bmp == null) "$label 解码失败" else "$label ${bmp.width}x${bmp.height}"
-    }.joinToString(" / ")
+    val report: String = buildString {
+        append(
+            sprites.mapIndexed { index, bmp ->
+                val label = VIEW_LABELS.getOrElse(index) { "视图$index" }
+                if (bmp == null) "$label 解码失败" else "$label ${bmp.width}x${bmp.height}"
+            }.joinToString(" / ")
+        )
+        append(" / 摸头 ")
+        append(if (patFrames.isEmpty()) "解码失败" else "${patFrames.size}帧")
+    }
+
+    /** Drives the head-pat animation while it is playing. */
+    private val patTick = object : Runnable {
+        override fun run() {
+            if (patFrames.isEmpty()) return
+
+            if (patFrame >= patFrames.size) {
+                patFrame = 0
+                patLoops++
+                if (patLoops >= PAT_LOOPS) {
+                    // Settle back onto whichever view she was showing.
+                    restingBitmap?.let { setImageBitmap(it) }
+                    return
+                }
+            }
+            setImageBitmap(patFrames[patFrame])
+            patFrame++
+            handler.postDelayed(this, PAT_FRAME_MS)
+        }
+    }
 
     init {
         scaleType = ScaleType.FIT_CENTER
@@ -76,8 +119,23 @@ class WhaleView(context: Context) : ImageView(context) {
         translationY = sin(tickCount / 24f) * h * 0.018f
     }
 
-    /** Poke reaction: advance to the next view. */
+    /** Poke reaction: play the head-pat animation. */
+    fun playPat() {
+        if (patFrames.isEmpty()) {
+            // Without frames, fall back to turning so a poke still reacts.
+            poke()
+            return
+        }
+        handler.removeCallbacks(patTick)
+        restingBitmap = sprites.getOrNull(facing) ?: sprites.firstOrNull { it != null }
+        patFrame = 0
+        patLoops = 0
+        handler.post(patTick)
+    }
+
+    /** Advance to the next view without playing the pat animation. */
     fun poke() {
+        handler.removeCallbacks(patTick)
         facing = (facing + 1) % sprites.size
         val next = sprites.getOrNull(facing) ?: sprites.firstOrNull { it != null }
         if (next != null) setImageBitmap(next)
@@ -96,6 +154,11 @@ class WhaleView(context: Context) : ImageView(context) {
         )
     }
 
+    /** Stop pending frame callbacks; called when the overlay is torn down. */
+    fun release() {
+        handler.removeCallbacks(patTick)
+    }
+
     companion object {
         private const val TAG = "WhaleView"
 
@@ -103,6 +166,15 @@ class WhaleView(context: Context) : ImageView(context) {
         const val SIZE_DP = 180
 
         private const val PLACEHOLDER_COLOR = 0x33FF3B30.toInt()
+
+        /** Frames in `assets/whale_pat`. */
+        private const val PAT_FRAME_COUNT = 5
+
+        /** The source GIF runs at 50 ms per frame. */
+        private const val PAT_FRAME_MS = 50L
+
+        /** Loops per poke; one pass is only 250 ms and reads as a flicker. */
+        private const val PAT_LOOPS = 3
 
         private val VIEW_LABELS = listOf("正面", "侧面", "背面")
 

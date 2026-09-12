@@ -123,6 +123,8 @@ class PetService : Service() {
         running = false
         PetState.running = false
         handler.removeCallbacksAndMessages(null)
+        // Stop the sprite's frame loop before its window goes away.
+        petView?.release()
         bubbleVisible = false
         menuVisible = false
         removeViewSafely(bubbleView)
@@ -336,8 +338,8 @@ class PetService : Service() {
             hideMenu()
             return
         }
-        petView?.poke()
-        petView?.jump()
+        // Petting her head plays the pat animation; the menu also opens.
+        petView?.playPat()
         showBubble(pickLine())
         showMenu()
     }
