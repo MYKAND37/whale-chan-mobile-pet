@@ -11,8 +11,8 @@ android {
         applicationId = "com.dsh.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "5.1"
+        versionCode = 9
+        versionName = "5.2"
     }
 
     buildTypes {
